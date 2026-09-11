@@ -114,8 +114,9 @@ const CHARS: &[char] = &[
     'm', 'n', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
 ];
 
-pub const RENDEZVOUS_SERVERS: &[&str] = &["rs-ny.rustdesk.com"];
-pub const RS_PUB_KEY: &str = "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=";
+// 定制版:出厂服务器与公钥(测试域占位,生产替换为一行改动后重建)
+pub const RENDEZVOUS_SERVERS: &[&str] = &["rd.test"];
+pub const RS_PUB_KEY: &str = "YbDVDRcEYDVtQBFSJ7b7nnap7lUGvpzKGKmLq0HPCug=";
 
 pub const RENDEZVOUS_PORT: i32 = 21116;
 pub const RELAY_PORT: i32 = 21117;
@@ -2837,9 +2838,25 @@ pub fn option2bool(option: &str, value: &str) -> bool {
     }
 }
 
+/// 定制版:原生 rendezvous 连续失败后置位,use_ws() 据此自动回退到 ws。
+static NATIVE_WS_FALLBACK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_native_ws_fallback(failed: bool) {
+    NATIVE_WS_FALLBACK.store(failed, std::sync::atomic::Ordering::SeqCst);
+}
+
+pub fn native_ws_fallback() -> bool {
+    NATIVE_WS_FALLBACK.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 pub fn use_ws() -> bool {
     let option = keys::OPTION_ALLOW_WEBSOCKET;
-    option2bool(option, &Config::get_option(option))
+    let value = Config::get_option(option);
+    if value.is_empty() {
+        // 未显式配置:原生优先,原生失败时按回退标志走 ws
+        return native_ws_fallback();
+    }
+    option2bool(option, &value)
 }
 
 pub fn allow_insecure_tls_fallback() -> bool {
@@ -2869,6 +2886,8 @@ pub mod keys {
     pub const OPTION_ALLOW_NUMERNIC_ONE_TIME_PASSWORD: &str = "allow-numeric-one-time-password";
     pub const OPTION_DIRECT_SERVER: &str = "direct-server";
     pub const OPTION_ALLOW_WEBSOCKET: &str = "allow-websocket";
+    pub const OPTION_WS_ID_PATH: &str = "ws-id-path";
+    pub const OPTION_WS_RELAY_PATH: &str = "ws-relay-path";
     pub const OPTION_TRACKPAD_SPEED: &str = "trackpad-speed";
     pub const OPTION_REGISTER_DEVICE: &str = "register-device";
     pub const OPTION_RELAY_SERVER: &str = "relay-server";

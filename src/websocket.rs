@@ -1,6 +1,7 @@
 use crate::{
     config::{
-        keys::OPTION_RELAY_SERVER, use_ws, Config, Socks5Server, RELAY_PORT, RENDEZVOUS_PORT,
+        keys::{OPTION_RELAY_SERVER, OPTION_WS_ID_PATH, OPTION_WS_RELAY_PATH},
+        use_ws, Config, Socks5Server, RELAY_PORT, RENDEZVOUS_PORT,
     },
     protobuf::Message,
     socket_client::split_host_port,
@@ -327,6 +328,27 @@ pub fn is_ws_endpoint(endpoint: &str) -> bool {
 }
 
 /**
+ * ws 域名推导路径,用户可通过选项自定义:
+ * ws-id-path(默认 /ws/id)、ws-relay-path(默认 /ws/relay)。
+ * 便于把 ws 流量藏在非默认路径下(抗测绘),同时保持上游默认行为。
+ */
+fn ws_domain_path(relay: bool) -> String {
+    let (option, default) = if relay {
+        (OPTION_WS_RELAY_PATH, "/ws/relay")
+    } else {
+        (OPTION_WS_ID_PATH, "/ws/id")
+    };
+    let path = Config::get_option(option);
+    if path.is_empty() {
+        default.to_owned()
+    } else if path.starts_with('/') {
+        path
+    } else {
+        format!("/{path}")
+    }
+}
+
+/**
  * Core function to convert an endpoint to WebSocket format
  *
  * Converts between different address formats:
@@ -384,7 +406,7 @@ pub fn check_ws(endpoint: &str) -> String {
     let (address, is_domain) = if crate::is_ip_str(endpoint) {
         (format!("{}:{}", endpoint_host, dst_port), false)
     } else {
-        let domain_path = if relay { "/ws/relay" } else { "/ws/id" };
+        let domain_path = ws_domain_path(relay);
         (format!("{}{}", endpoint_host, domain_path), true)
     };
     let protocol = if is_domain {
@@ -457,6 +479,17 @@ mod tests {
             check_ws("rustdesk.com:34567"),
             "wss://rustdesk.com/ws/relay"
         );
+        // 自定义 ws 路径(ws-id-path / ws-relay-path)
+        Config::set_option("ws-id-path".to_string(), "m3q8/id".to_string());
+        Config::set_option("ws-relay-path".to_string(), "/m3q8/relay".to_string());
+        assert_eq!(check_ws("rustdesk.com:21115"), "wss://rustdesk.com/m3q8/id");
+        assert_eq!(check_ws("rustdesk.com:21116"), "wss://rustdesk.com/m3q8/id");
+        assert_eq!(
+            check_ws("rustdesk.com:34567"),
+            "wss://rustdesk.com/m3q8/relay"
+        );
+        Config::set_option("ws-id-path".to_string(), "".to_string());
+        Config::set_option("ws-relay-path".to_string(), "".to_string());
 
         // set custom-rendezvous-server without port
         Config::set_option(

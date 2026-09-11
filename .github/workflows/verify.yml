@@ -1,6 +1,6 @@
 name: verify
 
-on:
+"on":
   workflow_dispatch:
 
 jobs:
